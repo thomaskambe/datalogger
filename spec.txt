@@ -1,0 +1,7 @@
+- board: arduino intel galilieo gen 1
+- storage: csv file on microSD
+- record: 
+	- arduino: motor temp, position, acceleration
+	- roboRio: voltage, current, claw position
+- analyze: open with spread sheet program
+
