@@ -3,11 +3,10 @@
 #include <SD.h>
 #include <Wire.h>
 
-byte mac[] = { 
-  0x98, 0x4F, 0xEE, 0x01, 0x5B, 0x00 };    // mac adress of galileo
-IPAddress ip(10,2,95,6);                    // ip of galileo
-unsigned int localPort = 5810;              // local port to listen on
-char packetBuffer[UDP_TX_PACKET_MAX_SIZE];  // buffer to hold incoming packet,
+byte mac[] = {0x98, 0x4F, 0xEE, 0x01, 0x5B, 0x00};  // mac adress of galileo
+IPAddress ip(10,2,95,6);                            // ip address of galileo
+unsigned int localPort = 5810;                      // local port to listen on
+char packetBuffer[UDP_TX_PACKET_MAX_SIZE];          // buffer to hold incoming packet,
 EthernetUDP Udp;
 
 const int DS1307 = 0x68;
@@ -37,25 +36,33 @@ byte month;
 // --------------------------------------------------
 //   get the match number and increment
 // --------------------------------------------------
-int getMatchNum(void) {
+int getMatchNum(void)
+{
   File matchFile;
   char matchNumFile[] = "matchNum.txt";
   int match = 0;
 
-  if (!SD.exists(matchNumFile)) {
+  if (!SD.exists(matchNumFile))
+  {
     matchFile = SD.open(matchNumFile, FILE_WRITE);
-    if (matchFile) {
+    if (matchFile)
+    {
       matchFile.print(++match);
       matchFile.close();
     }
     else
+    {
       return (0);
+    }
   }
-  else {
+  else
+  {
     matchFile = SD.open(matchNumFile, FILE_READ);
-    if (matchFile) {
+    if (matchFile)
+    {
       char fileData = matchFile.read();
-      while (fileData != -1) {
+      while (fileData != -1)
+      {
         match = match*10 + (fileData - '0');
         fileData = matchFile.read();
       }
@@ -68,7 +75,9 @@ int getMatchNum(void) {
       matchFile.close();
     }
     else
+    {
       return (0);
+    }
   }
   return (match);
 }  // getMatchNum
@@ -77,8 +86,10 @@ int getMatchNum(void) {
 // --------------------------------------------------
 //   blink error lights
 // --------------------------------------------------
-void error() {
-  while(1) {
+void error()
+{
+  while(1)
+  {
     digitalWrite(redPin, LOW);
     delay(shortOff);
     digitalWrite(redPin, HIGH);
@@ -90,7 +101,8 @@ void error() {
 // --------------------------------------------------
 //   setup function
 // --------------------------------------------------
-void setup() {
+void setup()
+{
   int match;
 
   system("telnetd -l /bin/sh");   // open galileo for ethernet access
@@ -124,7 +136,8 @@ void setup() {
 // --------------------------------------------------
 //   create data file and write headers
 // --------------------------------------------------
-int createDataFile(void) {
+int createDataFile(void)
+{
   //if (!(match = getMatchNum())) error();
   //sprintf(dataFileName, "%08d.csv", match);  // no clock
   readTime();
@@ -142,7 +155,8 @@ int createDataFile(void) {
 // --------------------------------------------------
 //   main loop
 // --------------------------------------------------
-void loop() {
+void loop()
+{
   static int s = 0;
   static int ledState = 0;
   static unsigned long initialTime;
@@ -152,171 +166,211 @@ void loop() {
   static unsigned long redTime = 0;
   int packetSize;
   int i;
-  static int adc[6] = {
-    0,0,0,0,0,0  };
+  static int adc[6] = {0,0,0,0,0,0};
   static char chan = 0;
   float temp;
   static unsigned long muxTime = 0;
   char tempString[40];
 
-  switch(s) {
+  switch(s)
+  {
 
-  case 0:   //wait for first packet
-    packetSize = Udp.parsePacket();
-    if (packetSize) {
-      if (!createDataFile()) {
+    case 0:   //wait for first packet
+      packetSize = Udp.parsePacket();
+      if (packetSize)
+      {
+        if (!createDataFile())
+        {
+          i = Udp.read(packetBuffer,UDP_TX_PACKET_MAX_SIZE);
+          initialTime = millis();
+          packetTime = initialTime;
+          writeTime = 0;
+          if (packetBuffer[0] != '#')
+          {
+            dataFile.print(";\r\n");
+            dataFile.print(writeTime);
+            sprintf(tempString, ";%d;%d;%d;%d;%d;%d;", adc[0], adc[1], adc[2], adc[3], adc[4], adc[5]);
+            dataFile.print(tempString);
+          }
+          else
+          {
+            dataFile.print(";");
+          }
+          dataFile.write((uint8_t *)packetBuffer, i);
+          dataFile.flush();
+          redTime = initialTime + errorFlash;
+          digitalWrite(redPin, HIGH);
+          digitalWrite(redPin2, HIGH);
+          s = 1;
+        }
+        else
+        {
+          s = 7;
+        }
+      } // if
+      break;
+
+    case 1:   // wait for packet
+      packetSize = Udp.parsePacket();
+      if (packetSize)
+      {
         i = Udp.read(packetBuffer,UDP_TX_PACKET_MAX_SIZE);
-        initialTime = millis();
-        packetTime = initialTime;
-        writeTime = 0;
-        if (packetBuffer[0] != '#') {
+        packetTime = millis();
+        writeTime = packetTime - initialTime;
+        if (packetBuffer[0] != '#')
+        {
           dataFile.print(";\r\n");
           dataFile.print(writeTime);
           sprintf(tempString, ";%d;%d;%d;%d;%d;%d;", adc[0], adc[1], adc[2], adc[3], adc[4], adc[5]);
           dataFile.print(tempString);
         }
         else
+        {
           dataFile.print(";");
+        }
         dataFile.write((uint8_t *)packetBuffer, i);
         dataFile.flush();
-        redTime = initialTime + errorFlash;
+        redTime = packetTime + errorFlash;
         digitalWrite(redPin, HIGH);
         digitalWrite(redPin2, HIGH);
-        s = 1;
       }
-      else
-        s = 7;
-    } // if
-    break;
-
-  case 1:   // wait for packet
-    packetSize = Udp.parsePacket();
-    if (packetSize) {
-      i = Udp.read(packetBuffer,UDP_TX_PACKET_MAX_SIZE);
-      packetTime = millis();
-      writeTime = packetTime - initialTime;
-      if (packetBuffer[0] != '#') {
-        dataFile.print(";\r\n");
-        dataFile.print(writeTime);
-        sprintf(tempString, ";%d;%d;%d;%d;%d;%d;", adc[0], adc[1], adc[2], adc[3], adc[4], adc[5]);
-        dataFile.print(tempString);
+      if ((millis() - packetTime) > timeOut)
+      {
+        s = 3;
       }
-      else
-        dataFile.print(";");
-      dataFile.write((uint8_t *)packetBuffer, i);
-      dataFile.flush();
-      redTime = packetTime + errorFlash;
-      digitalWrite(redPin, HIGH);
-      digitalWrite(redPin2, HIGH);
-    }
-    if ((millis() - packetTime) > timeOut)
-      s = 3;
-    break;
+      break;
 
-  case 3:  // close
-    dataFile.print("\r\n");
-    dataFile.close();
-    s = 0;
-    break;
+    case 3:  // close
+      dataFile.print("\r\n");
+      dataFile.close();
+      s = 0;
+      break;
 
-  case 7:   // error
-    break;
+    case 7:   // error
+      break;
 
   }  // switch s
 
 
   //led state machine
 
-  switch(ledState) {
-  case 0:
-    if (millis() > redTime) {
-      digitalWrite(redPin, LOW);
-      digitalWrite(redPin2, LOW);
-    }
-    if ( millis() > grnTime) {
-      digitalWrite(grnPin, HIGH);
-      digitalWrite(grnPin2, HIGH);
-      grnTime = millis() + shortOn;
-      ledState = 1;
-    }
-    break;
+  switch(ledState)
+  {
+    case 0:
+      if (millis() > redTime)
+      {
+        digitalWrite(redPin, LOW);
+        digitalWrite(redPin2, LOW);
+      }
+      if ( millis() > grnTime)
+      {
+        digitalWrite(grnPin, HIGH);
+        digitalWrite(grnPin2, HIGH);
+        grnTime = millis() + shortOn;
+        ledState = 1;
+      }
+      break;
 
-  case 1:
-    if (millis() > redTime) {
-      digitalWrite(redPin, LOW);
-      digitalWrite(redPin2, LOW);
-    }
-    if (millis() > grnTime) {
-      digitalWrite(grnPin, LOW);
-      digitalWrite(grnPin2, LOW);
-      grnTime = millis() + shortOff;
-      if (s == 0)
+    case 1:
+      if (millis() > redTime)
+      {
+        digitalWrite(redPin, LOW);
+        digitalWrite(redPin2, LOW);
+      }
+      if (millis() > grnTime)
+      {
+        digitalWrite(grnPin, LOW);
+        digitalWrite(grnPin2, LOW);
+        grnTime = millis() + shortOff;
+        if (s == 0)
+        {
+          ledState = 3;
+        }
+        else
+        {
+          ledState = 2;
+        }
+      }
+      break;
+
+    case 2:
+      if (millis() > redTime)
+      {
+        digitalWrite(redPin, LOW);
+        digitalWrite(redPin2, LOW);
+      }
+      if ( millis() > grnTime)
+      {
+        digitalWrite(grnPin, HIGH);
+        digitalWrite(grnPin2, HIGH);
+        grnTime = millis() + shortOn;
         ledState = 3;
-      else
-        ledState = 2;
-    }
-    break;
+      }
+      break;
 
-  case 2:
-    if (millis() > redTime) {
-      digitalWrite(redPin, LOW);
-      digitalWrite(redPin2, LOW);
-    }
-    if ( millis() > grnTime) {
-      digitalWrite(grnPin, HIGH);
-      digitalWrite(grnPin2, HIGH);
-      grnTime = millis() + shortOn;
-      ledState = 3;
-    }
-    break;
+    case 3:
+      if (millis() > redTime)
+      {
+        digitalWrite(redPin, LOW);
+        digitalWrite(redPin2, LOW);
+      }
+      if (millis() > grnTime)
+      {
+        digitalWrite(grnPin, LOW);
+        digitalWrite(grnPin2, LOW);
+        grnTime = millis() + longOff;
+        if (s == 7)
+        {
+          ledState = 4;
+        }
+        else
+        {
+          ledState = 0;
+        }
+      }
+      break;
 
-  case 3:
-    if (millis() > redTime) {
-      digitalWrite(redPin, LOW);
-      digitalWrite(redPin2, LOW);
-    }
-    if (millis() > grnTime) {
-      digitalWrite(grnPin, LOW);
-      digitalWrite(grnPin2, LOW);
-      grnTime = millis() + longOff;
-      if (s == 7)
-        ledState = 4;
-      else
-        ledState = 0;
-    }
-    break;
+    case 4:
+      if (millis() > grnTime)
+      {
+        grnTime = millis() + shortOff;
+        digitalWrite(grnPin, HIGH);
+        digitalWrite(grnPin2, HIGH);
+        digitalWrite(redPin, LOW);
+        digitalWrite(redPin2, LOW);
+        ledState = 5;
+      }
+      break;
 
-  case 4:
-    if (millis() > grnTime) {
-      grnTime = millis() + shortOff;
-      digitalWrite(grnPin, HIGH);
-      digitalWrite(grnPin2, HIGH);
-      digitalWrite(redPin, LOW);
-      digitalWrite(redPin2, LOW);
-      ledState = 5;
-    }
-    break;
+    case 5:
+      if (millis() > grnTime)
+      {
+        grnTime = millis() + shortOff;
+        digitalWrite(grnPin, LOW);
+        digitalWrite(grnPin2, LOW);
+        digitalWrite(redPin, HIGH);
+        digitalWrite(redPin2, HIGH);
+        if (s == 7)
+        {
+          ledState = 4;
+        }
+        else
+        {
+          ledState = 3;
+        }
+      }
+      break;   
+    }  // led switch
 
-  case 5:
-    if (millis() > grnTime) {
-      grnTime = millis() + shortOff;
-      digitalWrite(grnPin, LOW);
-      digitalWrite(grnPin2, LOW);
-      digitalWrite(redPin, HIGH);
-      digitalWrite(redPin2, HIGH);
-      if (s == 7)
-        ledState = 4;
-      else
-        ledState = 3;
-    }
-    break;   
-  }  // led switch
-
-  if (millis() > muxTime) {
+  if (millis() > muxTime)
+  {
     temp = (float)analogRead(0) * 0.488;
     adc[chan] = (int)temp;
     //Serial.println(adc[chan]);
-    if (++chan > 5) chan = 0;
+    if (++chan > 5) 
+    {
+      chan = 0;
+    }
     mux(chan);
     muxTime = millis() + 50;
   }
@@ -327,62 +381,69 @@ void loop() {
 // --------------------------------------------------
 //   switch the mux channels
 // --------------------------------------------------
-void mux(char chan) {
-  switch(chan) {
-  case 0:   // sensor 0
-    digitalWrite(a0Pin, LOW);
-    digitalWrite(a1Pin, LOW);
-    digitalWrite(a2Pin, LOW);
-    break;
-
-  case 1:   // sensor 1
-    digitalWrite(a0Pin, HIGH);
-    digitalWrite(a1Pin, LOW);
-    digitalWrite(a2Pin, LOW);
-    break;
-
-  case 2:   // sensor 2
-    digitalWrite(a0Pin, LOW);
-    digitalWrite(a1Pin, HIGH);
-    digitalWrite(a2Pin, LOW);
-    break;
-
-  case 3:   // sensor 3
-    digitalWrite(a0Pin, HIGH);
-    digitalWrite(a1Pin, HIGH);
-    digitalWrite(a2Pin, LOW);
-    break;
-
-  case 4:   // sensor 4
-    digitalWrite(a0Pin, LOW);
-    digitalWrite(a1Pin, LOW);
-    digitalWrite(a2Pin, HIGH);
-    break;
+void mux(char chan) 
+{
+  switch(chan) 
+  {
+    case 0:   // sensor 0
+      digitalWrite(a0Pin, LOW);
+      digitalWrite(a1Pin, LOW);
+      digitalWrite(a2Pin, LOW);
+      break;
+  
+    case 1:   // sensor 1
+      digitalWrite(a0Pin, HIGH);
+      digitalWrite(a1Pin, LOW);
+      digitalWrite(a2Pin, LOW);
+      break;
+  
+    case 2:   // sensor 2
+      digitalWrite(a0Pin, LOW);
+      digitalWrite(a1Pin, HIGH);
+      digitalWrite(a2Pin, LOW);
+      break;
+  
+    case 3:   // sensor 3
+      digitalWrite(a0Pin, HIGH);
+      digitalWrite(a1Pin, HIGH);
+      digitalWrite(a2Pin, LOW);
+      break;
+  
+    case 4:   // sensor 4
+      digitalWrite(a0Pin, LOW);
+      digitalWrite(a1Pin, LOW);
+      digitalWrite(a2Pin, HIGH);
+      break;
+      
+    case 5:
+      digitalWrite(a0Pin, HIGH);
+      digitalWrite(a1Pin, LOW);
+      digitalWrite(a2Pin, HIGH);
+      break;
     
-  case 5:
-    digitalWrite(a0Pin, HIGH);
-    digitalWrite(a1Pin, LOW);
-    digitalWrite(a2Pin, HIGH);
-    break;
-  }
+  } // switch
 
-}
+} // mux
 
 
 // --------------------------------------------------
 //   convert byte to decimal
 // --------------------------------------------------
-byte bcdToDec(byte val) {
+byte bcdToDec(byte val) 
+{
   return ((val / 16 * 10) + (val % 16));
-}
+  
+} // bcdToDec
 
 
 // --------------------------------------------------
 //   print the time from the RTC
 // --------------------------------------------------
-void printTime() {
+void printTime() 
+{
   char buffer[3];
   const char* AMPM = 0;
+
   readTime();
   Serial.print("20");
   Serial.print(year);
@@ -392,7 +453,8 @@ void printTime() {
   Serial.print(day);
 
   Serial.print(" ");
-  if (hour > 12) {
+  if (hour > 12)
+  {
     hour -= 12;
     AMPM = " PM";
   }
@@ -402,13 +464,15 @@ void printTime() {
   sprintf(buffer, "%02d", minute);
   Serial.print(buffer);
   Serial.println(AMPM);
-}
+  
+} // printTime
 
 
 // --------------------------------------------------
 //   read the time from the RTC
 // --------------------------------------------------
-void readTime() {
+void readTime()
+{
   Wire.beginTransmission(DS1307);
   Wire.write(byte(0));
   Wire.endTransmission();
@@ -421,5 +485,5 @@ void readTime() {
   month = bcdToDec(Wire.read());
   year = bcdToDec(Wire.read());
 
-}
+} // readTime
 
